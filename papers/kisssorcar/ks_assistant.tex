@@ -211,11 +211,15 @@ The Worktree Agent is the outermost layer.  Its defining feature is git-worktree
 
 We evaluate on Terminal-Bench~2.0,\footnote{\url{https://www.tbench.ai/}} a benchmark comprising 89 diverse terminal-based programming tasks, ranging from building legacy compilers and configuring servers to solving cryptanalysis challenges and training machine-learning models.  Each task runs in an isolated Docker container; a separate verifier automatically judges the result.  We use the Harbor\footnote{\url{https://github.com/harbor-framework/harbor}} framework to orchestrate execution and Claude Opus~4.6~\citep{anthropic2026opus46} as the underlying LLM.  We do not modify the general system prompt or inject benchmark-specific instructions.  Evaluation was carried out on a 2025 MacBook Air 15'' with an M4 processor and 24\,GB RAM.
 
+\vspace*{-1ex}
 \subsection{Setup}
+\vspace*{-1ex}
 
 We run 5 independent trials per task.  The agent is a thin Harbor adapter that installs and invokes the KS Assistant CLI inside each container.  We hard-skip 9 tasks verified to be infeasible for Opus~4.6 across 6+ prior attempts (e.g., CompCert compilation, Windows~3.11 GUI installation, video OCR) to save time and token cost.  Skipped tasks still count as failures.
 
+\vspace*{-1ex}
 \subsection{Aggregate Results}
+\vspace*{-1ex}
 
 Table~\ref{tab:tb2-aggregate} summarizes the aggregate statistics.
 
@@ -318,11 +322,13 @@ When the agent needs external knowledge, the prompt prescribes a structured rese
 - Ask user for login help when needed.
 \end{prompt}
 
-\noindent The rationale is a two-phase separation between \emph{collection} and \emph{synthesis}.  LLMs tend to anchor on the first few results they encounter, biasing their solutions toward a narrow slice of the design space.  By forcing the agent to accumulate a broad set of information into a file \emph{before} reasoning about it, the protocol counteracts anchoring bias and encourages the model to consider diverse approaches.
+\noindent The rationale is a two-phase separation between \emph{collection} and \emph{synthesis}.  LLMs tend to anchor on the first few results they encounter, biasing their solutions toward a narrow slice of the design space.  By forcing the agent to accumulate a broad set of information into a file \emph{before} reasoning about it, the protocol counteracts anchoring bias and encourages the model to consider diverse approaches. The ``visit $\geq$30 websites'' threshold is deliberately aggressive: it ensures the agent does not shortcut the research phase after two or three hits, and the resulting information file serves as an auditable artifact of what the agent considered.  
 
-The ``visit $\geq$30 websites'' threshold is deliberately aggressive: it ensures the agent does not shortcut the research phase after two or three hits, and the resulting information file serves as an auditable artifact of what the agent considered.  The structured procedure with a counter header and per-site entries addresses an empirically observed failure mode in which the model claims to have ``visited many sites'' after only a handful of fetches; a concrete counter forces the model to verify the actual number visited before declaring the collection phase complete.  The instruction to try ``different queries, synonyms, official docs'' when results dry up prevents the agent from giving up prematurely on a narrow set of search terms.
+% The structured procedure with a counter header and per-site entries addresses an empirically observed failure mode in which the model claims to have ``visited many sites'' after only a handful of fetches; a concrete counter forces the model to verify the actual number visited before declaring the collection phase complete.  The instruction to try ``different queries, synonyms, official docs'' when results dry up prevents the agent from giving up prematurely on a narrow set of search terms.
 
-This two-phase collect-then-synthesize discipline is also applied to local file browsing (Appendix~\ref{app:file-browsing}): the agent writes a structured summary of each file's relevant information into a temporary markdown file, externalizing its understanding into a compact artifact that persists across context boundaries.  The instruction to collect ``without overthinking'' is deliberate: during the collection phase, the agent extracts and records facts rather than analyzes.  Analysis happens in the second phase, when the agent reads its own summary and reasons about the collected information as a whole.
+This two-phase collect-then-synthesize discipline is also applied to local file browsing (Appendix~\ref{app:file-browsing}): the agent writes a structured summary of each file's relevant information into a temporary markdown file, externalizing its understanding into a compact artifact that persists across context boundaries.  
+% The instruction to collect ``without overthinking'' is deliberate: during the collection phase, the agent extracts and records facts rather than analyzes.  
+Analysis happens in the second phase, when the agent reads its own summary and reasons about the collected information as a whole.
 
 \vspace*{-2ex}
 %----------------------------------------------------------------------
@@ -346,7 +352,7 @@ We release our system as a VS~Code extension and a web app.  While the underlyin
 %----------------------------------------------------------------------
 \vspace*{-1ex}
 
-A central claim of our system is that natural-language interaction can replace manual code inspection and ad hoc scripting for understanding and evolving nontrivial subsystems.  While developing KS Assistant, we found a particular workflow to be particularly useful.  In the workflow, we first ask KS Assistant to generate a detailed, step-by-step description of a workflow or algorithm we found buggy, and then we ask KS Assistant to revise some of the buggy steps in natural language.  We illustrate this with a real development session drawn from the project's own history, in which the worktree merge workflow (Section~\ref{sec:worktree-agent}) was first understood and then redesigned entirely through conversational prompts.  The session comprises four consecutive tasks; we reproduce the prompts verbatim and summarize the agent's responses.
+A central claim of our system is that natural-language interaction can replace manual code inspection and ad hoc scripting for understanding and evolving nontrivial subsystems.  While developing KS Assistant, we found a particular workflow to be useful.  In the workflow, we first ask KS Assistant to generate a detailed, step-by-step description of a workflow or algorithm we found buggy, and then we ask KS Assistant to revise some of the buggy steps in natural language.  We illustrate this with a real development session drawn from the project's own history, in which the worktree merge workflow (Section~\ref{sec:worktree-agent}) was first understood and then redesigned entirely through conversational prompts.  The session comprises four consecutive tasks; we reproduce the prompts verbatim and summarize the agent's responses.
 
 \paragraph{Step~1: Understanding the existing workflow.} The developer begins by asking the agent to explain the current post-task git lifecycle:
 
@@ -370,26 +376,29 @@ original branch.
 
 \noindent The agent modifies six files across Python and TypeScript: it updates \texttt{discard()} to check out the original branch before deleting the task branch, removes the \texttt{manual\_merge()} method entirely, simplifies \texttt{merge\_instructions()} to show only two options, updates the webview UI to replace the three-button toolbar with a two-button ``Commit and Merge or Discard?'' bar, removes the \texttt{manual} action type from the TypeScript type definitions, and removes the corresponding handler from the Python backend.  Three tests for the deleted manual-merge path have been removed, and one routing test has been updated.  All 28 worktree tests pass after the change.
 
-\paragraph{Step~3: Investigating unexpected post-merge state.} After testing the simplified flow, the developer notices that files appear in the Source Control panel of VS~Code on the original branch after pressing ``Commit and Merge'' and asks:
+We skip the description of the remaining 2 tasks in the paper in the interest of space, but they can be found in the Appendix.
 
-\begin{prompt}
-After the user presses "Commit and Merge", why do the modified files show up as 
-committed in the original branch?
-\end{prompt}
+% \paragraph{Step~3: Investigating unexpected post-merge state.} After testing the simplified flow, the developer notices that files appear in the Source Control panel of VS~Code on the original branch after pressing ``Commit and Merge'' and asks:
 
-\noindent The agent traces the exact execution path through \texttt{squash\_merge\_branch()} and discovers that the implementation deliberately \emph{unstages} the squash-merged changes via \texttt{git reset HEAD} so they appear as uncommitted working-tree modifications in VS~Code's Source Control panel.  The design intention was to let the user review the diff before committing manually.  The agent reports this finding along with the relevant code snippet and a verified end state showing no new commits on the branch.
+% \begin{prompt}
+% After the user presses "Commit and Merge", why do the modified files show up as 
+% committed in the original branch?
+% \end{prompt}
 
-\paragraph{Step~4: Directing a design change in one sentence.} The developer realizes that code review already happened while the worktree was active and decides the unstage step is unnecessary:
+% \noindent The agent traces the exact execution path through \texttt{squash\_merge\_branch()} and discovers that the implementation deliberately \emph{unstages} the squash-merged changes via \texttt{git reset HEAD} so they appear as uncommitted working-tree modifications in VS~Code's Source Control panel.  The design intention was to let the user review the diff before committing manually.  The agent reports this finding along with the relevant code snippet and a verified end state showing no new commits on the branch.
 
-\begin{prompt}
-The review is already happening in the worktree branch. You don't need the user 
-to review the modified and new files in the original branch. Fix it.
-\end{prompt}
+% \paragraph{Step~4: Directing a design change in one sentence.} The developer realizes that code review already happened while the worktree was active and decides the unstage step is unnecessary:
 
-\noindent The agent replaces the \texttt{git reset HEAD} call in \texttt{squash\_merge\_branch()} with a conditional \texttt{git commit --no-edit} that uses the auto-generated squash message.  It adds a \texttt{git diff --cached --quiet} guard for the edge case where the merge produces no changes.  One existing test (\texttt{test\_merge\_leaves\_changes\_uncommitted}) is renamed to \texttt{test\_merge\_commits\_changes} and its assertions are updated to verify a clean working tree.  All 104 worktree tests pass.
+% \begin{prompt}
+% The review is already happening in the worktree branch. You don't need the user 
+% to review the modified and new files in the original branch. Fix it.
+% \end{prompt}
+
+% \noindent The agent replaces the \texttt{git reset HEAD} call in \texttt{squash\_merge\_branch()} with a conditional \texttt{git commit --no-edit} that uses the auto-generated squash message.  It adds a \texttt{git diff --cached --quiet} guard for the edge case where the merge produces no changes.  One existing test (\texttt{test\_merge\_leaves\_changes\_uncommitted}) is renamed to \texttt{test\_merge\_commits\_changes} and its assertions are updated to verify a clean working tree.  All 104 worktree tests pass.
 
 \medskip
-\noindent\textbf{Discussion.} The four-step session illustrates the ``painless'' development loop that our system enables.  The developer never opens a source file, never writes a line of code, and never runs a test manually.  Instead, the entire cycle---understand the workflow, redesign it, investigate an anomaly, direct a fix---happens through natural-language prompts, with the agent handling code reading, multi-file editing, test updates, and verification.  This style of development becomes possible because of the agent hierarchy described in Section~\ref{sec:architecture}: the Worktree Agent isolates changes on a branch, the Chat Agent preserves conversational context across tasks, and the Relentless Agent automatically continues when the context window is exhausted.
+\noindent\textbf{Discussion.} The four-step session illustrates the ``painless'' development loop that our system enables.  The developer never opens a source file, never writes a line of code, and never runs a test manually.  Instead, the entire cycle---understand the workflow, redesign it, investigate an anomaly, direct a fix---happens through natural-language prompts, with the agent handling code reading, multi-file editing, test updates, and verification.  
+% This style of development becomes possible because of the agent hierarchy described in Section~\ref{sec:architecture}: the Worktree Agent isolates changes on a branch, the Chat Agent preserves conversational context across tasks, and the Relentless Agent automatically continues when the context window is exhausted.
 
 \vspace*{-2ex}
 %----------------------------------------------------------------------
@@ -623,8 +632,8 @@ Collect info and code snippets in PWD/tmp/file-information-{unique_id}.md withou
 This instruction applies the same two-phase collect-then-synthesize discipline used for web research (Section~\ref{sec:web-research}) to the local file system.  By writing a structured summary of each file's relevant information into a temporary markdown file, the agent externalizes its understanding into a compact artifact that is typically much smaller than the raw source files, freeing up context window capacity for subsequent reasoning and editing.
 
 %......................................................................
-\subsection{Desktop Application Control}
-\label{app:desktop}
+\subsection{Painless Software Engineering (continued)}
+\label{app:painless}
 %......................................................................
 
 \begin{prompt}
@@ -634,6 +643,25 @@ Use screenshots, keyboard, and mouse. Don't launch VS Code or its extensions.
 \end{prompt}
 
 The prohibition on launching VS~Code prevents a recursive loop: since the agent runs inside a VS~Code extension, launching another instance could corrupt the host session or create deadlocks.
+
+\newpage
+\paragraph{Step~3: Investigating unexpected post-merge state.} After testing the simplified flow, the developer notices that files appear in the Source Control panel of VS~Code on the original branch after pressing ``Commit and Merge'' and asks:
+
+\begin{prompt}
+After the user presses "Commit and Merge", why do the modified files show up as 
+committed in the original branch?
+\end{prompt}
+
+\noindent The agent traces the exact execution path through \texttt{squash\_merge\_branch()} and discovers that the implementation deliberately \emph{unstages} the squash-merged changes via \texttt{git reset HEAD} so they appear as uncommitted working-tree modifications in VS~Code's Source Control panel.  The design intention was to let the user review the diff before committing manually.  The agent reports this finding along with the relevant code snippet and a verified end state showing no new commits on the branch.
+
+\paragraph{Step~4: Directing a design change in one sentence.} The developer realizes that code review already happened while the worktree was active and decides the unstage step is unnecessary:
+
+\begin{prompt}
+The review is already happening in the worktree branch. You don't need the user 
+to review the modified and new files in the original branch. Fix it.
+\end{prompt}
+
+\noindent The agent replaces the \texttt{git reset HEAD} call in \texttt{squash\_merge\_branch()} with a conditional \texttt{git commit --no-edit} that uses the auto-generated squash message.  It adds a \texttt{git diff --cached --quiet} guard for the edge case where the merge produces no changes.  One existing test (\texttt{test\_merge\_leaves\_changes\_uncommitted}) is renamed to \texttt{test\_merge\_commits\_changes} and its assertions are updated to verify a clean working tree.  All 104 worktree tests pass.
 
 \newpage
 
