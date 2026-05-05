@@ -15,6 +15,7 @@
 \usepackage{enumitem}
 \usepackage{fancyvrb}
 \usepackage{listings}
+\usepackage{caption}
 \lstdefinestyle{kisspy}{
   language=Python,
   basicstyle=\ttfamily\scriptsize,
@@ -99,6 +100,9 @@ The KS Agent Framework was originally built to rapidly prototype and experiment 
 
 The KS Agent is the innermost execution unit implementing a standard ReAct loop~\citep{yao2023react}.
 
+\noindent
+\begin{minipage}[t]{0.58\textwidth}
+\vspace{0pt}
 \begin{lstlisting}[style=kisspy,numbers=none,caption={A complete KS agent with a single tool.},label={lst:simple-agent}]
 from ks.core.ks_agent import KSAgent
 
@@ -110,11 +114,37 @@ agent = KSAgent(name="Math Buddy")
 result = agent.run(
     model_name="gemini-2.5-flash",
     prompt_template="Calculate: {question}",
-    arguments={"question": "What is 15% of 847?"},
+    arguments={"question": "15% of 847?"},
     tools=[calculate]
 )
 print(result)  # 127.05
 \end{lstlisting}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.40\textwidth}
+\vspace{0pt}
+\centering
+\captionof{table}{Terminal-Bench~2.0 aggregate results (89 tasks, 5 trials each, Claude Opus~4.6).}
+\label{tab:tb2-aggregate}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lr}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Total tasks              & 89 \\
+Overall pass rate        & 62.2\% (277/445) \\
+pass@any (1/5 passes) & 78.7\% (70/89) \\
+pass@all (5/5 pass)      & 43.8\% (39/89) \\
+Always-fail tasks        & 19 \\
+Always-pass tasks        & 39 \\
+Mixed-result tasks       & 31 \\
+Median cost per trial    & \$0.45 \\
+Mean cost per trial      & \$0.90 \\
+Median duration / trial  & 202\,s \\
+Mean duration / trial    & 446\,s \\
+\bottomrule
+\end{tabular}
+\end{minipage}
 
 \textbf{Native function calling.}  Tools are registered as ordinary Python callables.  The agent builds an OpenAI-compatible tool schema once at setup time and caches it.  A special \texttt{finish} tool signals task completion and returns the result. Using a model's native calling API avoids the mistakes that models make on custom function calling conventions.
 
@@ -221,30 +251,7 @@ We run 5 independent trials per task.  The agent is a thin Harbor adapter that i
 \subsection{Aggregate Results}
 \vspace*{-1ex}
 
-Table~\ref{tab:tb2-aggregate} summarizes the aggregate statistics.
-
-\begin{table}[h]
-\centering
-\caption{Terminal-Bench~2.0 aggregate results (89 tasks, 5 trials each, Claude Opus~4.6).}
-\label{tab:tb2-aggregate}
-\begin{tabular}{lr}
-\toprule
-\textbf{Metric} & \textbf{Value} \\
-\midrule
-Total tasks              & 89 \\
-Overall pass rate        & 62.2\% (277/445) \\
-pass@any (at least 1/5 passes) & 78.7\% (70/89) \\
-pass@all (all 5 pass)    & 43.8\% (39/89) \\
-Always-fail tasks        & 19 \\
-Always-pass tasks        & 39 \\
-Mixed-result tasks       & 31 \\
-Median cost per trial    & \$0.45 \\
-Mean cost per trial      & \$0.90 \\
-Median duration per trial & 202\,s \\
-Mean duration per trial  & 446\,s \\
-\bottomrule
-\end{tabular}
-\end{table}
+Table~\ref{tab:tb2-aggregate} (shown earlier alongside Listing~\ref{lst:simple-agent}) summarizes the aggregate statistics.
 
 The 62.2\% overall pass rate compares favorably to other agents using the same underlying model: at the time of writing, Claude~Code (also Opus~4.6) scores approximately 58\% on the Terminal-Bench~2.0 leaderboard, and Cursor's Composer~2---a custom fine-tuned model trained with large-scale reinforcement learning~\citep{cursor2026composer2}---achieves 61.7\%.  Our result suggests that the layered architecture and the structured system prompt contribute meaningfully beyond what the base model provides.
 
