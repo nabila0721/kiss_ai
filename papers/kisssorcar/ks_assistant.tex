@@ -38,6 +38,24 @@
 
 \title{KS Assistant: A Simple General-Purpose AI Agent for Software Engineering}
 
+% Suppress the Anonymous Author(s)/Affiliation/Address/email block that
+% neurips_2026.sty emits in anonymous mode by redefining \@maketitle to
+% omit the author tabular entirely.
+\makeatletter
+\renewcommand{\@maketitle}{%
+  \vbox{%
+    \hsize\textwidth
+    \linewidth\hsize
+    \vskip 0.1in
+    \@toptitlebar
+    \centering
+    {\LARGE\bf \@title\par}
+    \@bottomtitlebar
+    \vskip 0.3in \@minus 0.1in
+  }%
+}
+\makeatother
+
 \begin{document}
 
 \maketitle
