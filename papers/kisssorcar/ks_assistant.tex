@@ -383,6 +383,9 @@ We have shown that a simple layered, single-concern architecture can address the
 
 We complement the architecture with a system prompt that encodes engineering discipline directly into the agent's behavior: read before writing, test before fixing, plan before executing, verify before finishing.  These are not novel insights---they are the practices of careful software engineering, translated into instructions that an LLM can follow.  The evaluation suggests that giving a frontier model the time and tools to validate its own output matters more than model-level customization.
 
+In summary, we showed that a simple agent framework, without sophisticated agent technologies such as trajectory compaction and asynchronous multi-agent orchestration, was sufficient to build KS Assistant.  By building KS Assistant using itself and beating both the Cursor and Claude Code agents, we demonstrated that time-tested software engineering techniques and principles are invaluable for building reliable, practical agent systems.
+
+
 \paragraph{Limitations.}  Our evaluation uses a single frontier model and benchmark; broader evaluation across open-weight models and benchmarks such as SWE-bench Pro is future work.  The continuation protocol's summaries may lose fidelity over many sub-sessions, and the quality-over-speed posture may not suit latency-sensitive workflows.
 
 %----------------------------------------------------------------------
