@@ -291,7 +291,7 @@ When the agent needs external knowledge, the prompt prescribes a structured rese
 \begin{prompt}
 ## Web Research (MANDATORY)
 
-- **Visit >=30 websites every search. Hard requirement — don't stop before 30, or rationalize fewer.**
+- **Visit >=30 websites every search. Hard requirement --- don't stop before 30, or rationalize fewer.**
 - Procedure:
   1. Create PWD/tmp/information-{unique_id}.md: `# Web Research --- Websites visited: 0/30`
   1. Per site, append: `## [N/30] URL` + extracted info. Update the header counter on each visit.
@@ -416,11 +416,38 @@ A simple, layered, single-concern architecture, combined with a system prompt th
 \section{Full system prompt details}
 \label{app:full-prompt}
 
-This appendix presents the remaining sections of the system prompt not discussed in the main body.  The execution mindset and web research protocol are covered in Sections~\ref{sec:execution-mindset} and~\ref{sec:web-research}, respectively.
+The system prompt is a structured document that governs the agent's behavior across all tasks.  It is not a generic instruction to ``be helpful'' but rather a precise specification of an engineering discipline. We describe its key sections.
 
 %......................................................................
-\subsection{Tool rules}
-\label{app:tool-rules}
+\subsection{Execution Mindset}
+%......................................................................
+
+The prompt opens with a directive that sets the tone:
+
+\begin{prompt}
+# FOCUS ON THE GIVEN TASK. ITS COMPLETION IS YOUR SOLE GOAL.
+# BE RELENTLESS. BE CALM. BE RIGOROUS. BE ACCURATE. CHECK FACTS. NO AI SLOP.
+\end{prompt}
+
+\noindent Each directive addresses a specific failure mode observed in
+LLM-based agents:
+
+\textbf{``FOCUS ON THE GIVEN TASK. ITS COMPLETION IS YOUR SOLE GOAL.''} LLMs have a tendency to drift: they comment on the difficulty of a problem, explore tangential concerns, or ask clarifying questions that the user has already answered.  This directive anchors the model on the task at hand and discourages meta-commentary that consumes tokens without making progress.
+
+\textbf{``BE RELENTLESS.''} When an agent encounters an error---a failing test, a type violation, a command that returns unexpected output---the default LLM behavior is to apologize, summarize the failure, and ask the user what to do next.  This directive instructs the model to treat errors as obstacles to overcome, not as reasons to stop.
+
+\textbf{``BE CALM.''} The complement of relentlessness.  An overly aggressive agent that panics on encountering an error may thrash between approaches without deliberation.  This directive encourages the model to analyze errors methodically before reacting.
+
+\textbf{``BE RIGOROUS.''} This instructs the model to follow the verification and testing disciplines encoded later in the prompt, rather than taking shortcuts when a solution \emph{looks} right.
+
+\textbf{``BE ACCURATE.''} LLMs frequently generate plausible-but-wrong code, file paths, or command-line flags.  This directive raises the model's threshold for asserting facts, encouraging it to verify claims against the actual file system or documentation rather than relying on parametric memory.
+
+\textbf{``CHECK FACTS.''} A more specific version of ``be accurate'' for information collected by KISS Sorcar uses web tools.
+
+\textbf{``NO AI SLOP.''} ``AI slop'' refers to the low-quality, generic, hedging text that LLMs produce when they lack confidence: filler phrases like ``certainly!'', unnecessary caveats, and boilerplate explanations that the user did not ask for.  This directive discourages such output and encourages the model to be concise and substantive.
+
+%......................................................................
+\subsection{Tool Rules}
 %......................................................................
 
 Tool usage rules are explicit and mechanical:
@@ -429,7 +456,7 @@ Tool usage rules are explicit and mechanical:
 # Rules
 
 - PWD = current working directory. Write() for new files; Edit() for small changes.
-- Run Bash synchronously with `timeout_seconds` (default 300s). Retry with a higher timeout on timeout. For >10 min commands, run in the background, redirect output to a file, and poll periodically.
+- Run Bash synchronously with `timeout_seconds` (default 300s). Retry with higher timeout on timeout. For >10 min commands, run in background, redirect output to file, poll periodically.
 - Use go_to_url() for browser. Search the internet extensively.
 - **User only sees the finish() summary. Include full details/results/outputs. Never include meta-descriptions like "Answered the user's question about X" or "Fixed the bug in Y".**
 - Read large files in chunks. Temp files in PWD/tmp; clean up after.
@@ -437,28 +464,29 @@ Tool usage rules are explicit and mechanical:
 - **If running out of context/steps, don't rush---call finish(is_continue=true).**
 \end{prompt}
 
-Each rule addresses a specific failure mode:
+Each tool rule addresses a specific failure mode:
 
-\textbf{``Write() for new files; Edit() for small changes.''}  Without this distinction, the model may use \texttt{Write()} to overwrite an existing file with a slightly modified version, losing content it forgot to include.
+\textbf{``PWD = current working directory.''}  The acronym ``PWD'' appears throughout the prompt and in user task descriptions (e.g., ``edit PWD/src/main.py'').  Without this definition, the model might interpret PWD as the Unix environment variable \texttt{\$PWD} and attempt to expand it, or misinterpret it as a literal directory name.  The explicit definition ensures consistent interpretation.
 
-\textbf{Bash timeout guidance.}  LLMs frequently launch shell commands without considering their runtime.  The instruction to use 300~seconds as the default, retry with higher timeouts, and run long-running commands in the background provides a mechanical protocol that handles common cases.
+\textbf{``Write() for new files; Edit() for small changes.''}  Without this distinction, the model may use \texttt{Write()} to overwrite an existing file with a slightly modified version, losing content it forgot to include.  By reserving \texttt{Write()} for new files and requiring \texttt{Edit()} for modifications, the instruction ensures that changes are surgical and that unchanged portions of a file are never at risk.
 
-\textbf{``Use go\_to\_url() for browser.\ Search the internet extensively.''}  The first clause specifies which tool to use for browser-based interactions.  The second encourages the agent to proactively search the web when it encounters unfamiliar APIs or error messages, rather than relying on parametric memory.
+\textbf{Bash timeout guidance.}  LLMs frequently launch shell commands without considering their runtime.  A compilation or test suite that takes five minutes will time out at the default 30-second shell timeout in most agent frameworks, causing spurious failures.  The instruction to use 300~seconds as the default, retry with higher timeouts on timeouts, and run long-running commands in the background with output redirected to a file provides a mechanical protocol that handles common cases without requiring the model to estimate runtime from first principles.
 
-\textbf{``User only sees the finish() summary.''}  This forces the model to put all user-facing information into the \texttt{finish} summary, preventing situations where the model ``tells'' the user something in an intermediate message and then assumes it was seen.  The companion clause about meta-descriptions prevents vague summaries, requiring concrete details and outputs.
+\textbf{``Use go\_to\_url() for browser.\ Search the internet extensively.''}  The agent has access to multiple tools that could plausibly interact with the web (shell-based \texttt{curl}, a Python program, the browser tool, etc.).  The first clause eliminates ambiguity by specifying which tool to use for browser-based interactions.  The second clause encourages the agent to proactively search the web when it encounters unfamiliar APIs, libraries, or error messages, rather than relying on potentially stale parametric memory.
 
-\textbf{``Read large files in chunks.\ Temp files in PWD/tmp; clean up after.''}  Reading a 10,000-line file in a single tool call consumes a large fraction of the context window.  Chunked reading preserves capacity for the rest of the task.  Centralizing temporary files in a known directory makes cleanup predictable and prevents project-tree pollution.
+\textbf{``User only sees the finish() summary.''}  Users can get lost in the detailed trajectory generated by KISS Sorcar in the chat window.  Often users want to see only the final summary returned by the \texttt{finish} tool, not the intermediate chain-of-thought or tool calls.  Without this instruction, the model may ``tell'' the user something in an intermediate message and then assume the user has seen it, leading to confusion when the user asks for information the model believes it already provided.  The companion clause ``Never include meta-descriptions'' prevents the model from returning vague summaries like ``Fixed the bug in Y'' instead of showing the actual fix; it forces the model to include concrete details, results, and outputs in the summary.
 
-\textbf{``Use ULTRA thinking ALWAYS.''}  This activates the model's extended reasoning mode, which is particularly valuable for complex, multi-step tasks.
+\textbf{``Read large files in chunks.\ Temp files in PWD/tmp; clean up after.''}  Reading a 10,000-line file in a single tool call consumes a large fraction of the context window.  By instructing the model to read files in chunks, the prompt prevents context window exhaustion caused by a single-file read, preserving capacity for the rest of the task.  Without the temporary-file directive, the model creates temporary files in unpredictable locations (the system \texttt{/tmp}, the home directory, or scattered throughout the project).  Centralizing temporary files in a known directory makes cleanup predictable, and the explicit cleanup directive prevents the project tree from being polluted with stale artifacts after the task completes.
 
-\textbf{``If running out of context/steps, don't rush---call finish(is\_continue=true).''}  When the context window is nearly full, LLMs exhibit a ``rush to finish'' behavior, skipping verification steps.  This instruction redirects that urgency into the continuation protocol (Section~\ref{sec:relentless-agent}).
+\textbf{``Use ULTRA thinking ALWAYS.''}  This instruction activates the model's extended reasoning mode (also known as ``thinking'' or ``chain-of-thought'' mode), in which the model performs additional internal deliberation before producing a response.  Extended reasoning is particularly valuable for complex, multi-step tasks in which the model must plan before acting.
+
+\textbf{``If running out of context/steps, don't rush---call finish(is\_continue=true).''}  When the context window is nearly full, LLMs exhibit a ``rush to finish'' behavior: they skip verification steps, make hasty edits, and call \texttt{finish} with an incomplete result.  This instruction redirects that urgency into the continuation protocol (Section~\ref{sec:relentless-agent}), ensuring that a clean handoff to a new sub-session produces better results than a frantic attempt to squeeze everything into the remaining tokens.
 
 %......................................................................
-\subsection{Pre-flight checks}
-\label{app:preflight}
+\subsection{Pre-flight Checks}
 %......................................................................
 
-Before modifying any file, the agent is instructed to read it first:
+Before modifying any file, we instruct the agent to read it first.  
 
 \begin{prompt}
 ## Pre-flight Checks
@@ -468,13 +496,17 @@ Before modifying any file, the agent is instructed to read it first:
 - **When fixing bugs/issues/races: write tests to confirm first, then fix.**
 \end{prompt}
 
-\textbf{``Read every file before modifying it.''}  The most common source of agent-introduced bugs is modifying a file based on an incorrect assumption about its current contents.  By requiring a fresh read immediately before any edit, the instruction ensures the model operates on the file's current state.
+\noindent Each pre-flight check targets a specific category of avoidable
+error:
 
-\textbf{``When fixing bugs/issues/races: write tests to confirm first, then fix.''}  This mandates test-first discipline: a test that reproduces the bug provides concrete verification that the fix is correct.  Writing the test forces the model to understand the bug precisely before attempting a fix.
+\textbf{``Read every file before modifying it.''}  The most common source of agent-introduced bugs is modifying a file based on an incorrect assumption about its current contents.  The model may ``remember'' an older version of the file from its training data, or it may extrapolate from a partial reading.  By requiring a fresh read immediately before any edit, the instruction ensures that the model operates on the file's current state rather than a stale mental model.  The companion clause ``Read relevant sources if the task depends on existing architecture'' extends this rule from individual files to architectural context.  A task like ``add a caching layer to the database module'' requires understanding not just the file to be modified, but also how callers interact with it, what interfaces it provides, and what invariants it assumes.  The instruction prevents the model from jumping straight to code generation without understanding the broader context.
+
+\textbf{``If referenced files/commands/config don't exist, stop and ask or report---don't guess.''}  LLMs have a strong tendency to confabulate: when asked to modify a file that does not exist, the model will often proceed as if it does, producing edits against phantom content.  This instruction converts a silent failure (incorrect edits applied to a nonexistent file, which silently creates it) into an explicit clarification request.
+
+\textbf{``When fixing bugs/issues/races: write tests to confirm first, then fix.''}  This instruction mandates a test-first discipline for bug fixes.  The motivation is two-fold: first, a test that reproduces the bug provides concrete verification that the fix is correct (the test should pass after the fix and fail before it).  Second, writing the test forces the model to understand the bug precisely before attempting a fix, reducing the risk of an ad~hoc patch that addresses a symptom rather than the root cause.
 
 %......................................................................
-\subsection{Code style guidelines}
-\label{app:code-style}
+\subsection{Code Style Guidelines}
 %......................................................................
 
 The prompt encodes a minimalist code philosophy:
@@ -490,11 +522,23 @@ The prompt encodes a minimalist code philosophy:
 - Don't write documentation unless the task requires it.
 \end{prompt}
 
-Each guideline addresses an anti-pattern commonly exhibited by LLM-generated code.  For example, ``DO NOT USE CLOSURES'' steers the model toward explicit data structures (plain functions with arguments, classes with attributes) that are easier to test and reason about.  ``Think first: is the code simple, elegant, general, minimal?'' is a metacognitive instruction that asks the model to pause and evaluate its plan, spending more inference-time compute on design.
+\noindent Each guideline addresses a specific anti-pattern commonly
+exhibited by LLM-generated code:
+
+\textbf{``Simple, clean, readable code with minimal indirection.\ Organize in multiple files by functionality.''}  LLMs tend to over-engineer solutions, introducing unnecessary abstractions, helper classes, and levels of indirection.  Simple code is easier to review, test, and maintain.  LLMs also often pile new code onto whichever file is currently being edited, producing 2,000-line modules that conflate unrelated concerns.  This directive nudges the model toward a modular layout in which each file has a single, coherent responsibility.
+
+\textbf{``Avoid unnecessary attributes, locals, config vars, tight coupling, and attribute redirections.''}  LLMs frequently introduce intermediate variables that serve no purpose---for example, assigning a return value to a local variable only to immediately return it on the next line, or storing a constant in a configuration file when it is used in exactly one place.  When the model adds a feature that touches multiple files, it may introduce imports, shared global state, or cross-module function calls that create tight coupling.  An attribute redirection occurs when an object stores a reference to another object solely to forward method calls to it---for example, \texttt{self.x = other.x} at construction time, creating two paths to the same value.  This single consolidated rule addresses all of these anti-patterns.
+
+\textbf{``DO NOT USE CLOSURES.\ No redundant abstractions or duplicate code.''}  LLMs reach for closures whenever a small piece of state needs to be carried alongside a function---producing nested \texttt{def}s that capture mutable variables from the enclosing scope.  Such closures are difficult to test in isolation, opaque to type checkers, and a frequent source of subtle bugs due to the late binding of captured variables.  The blanket prohibition steers the model toward explicit data structures (plain functions with arguments, classes with attributes), which are easier to reason about, easier to test, and play well with our no-mocks testing discipline.  LLMs also sometimes create utility functions or classes that duplicate existing functionality; this instruction reminds the model to check for existing implementations before creating new ones.
+
+\textbf{``Public methods MUST have full documentation.''}  While the prompt generally discourages unnecessary documentation (see the last item), public methods are the API surface that other developers and modules depend on.  Documentation on public methods is not optional---it specifies the contract.
+
+\textbf{``Fix root causes, not symptoms.\ Think first: is the code simple, elegant, general, minimal?''}  LLMs frequently apply symptom-level fixes: adding a null check where the real problem is that a variable should never be null, or catching an exception where the real problem is that the caller passes invalid arguments.  This instruction forces the model to trace the causal chain to the root and fix it there.  The companion metacognitive instruction asks the model to pause and evaluate its plan before committing to an implementation, spending more inference-time compute on design and reducing the likelihood of producing an unnecessarily complex first draft.
+
+\textbf{``Don't write documentation unless the task requires it.''}  Claude Opus 4.6 tends to generate many documentation files.  This instruction prevents the behavior.
 
 %......................................................................
-\subsection{Deep work rules}
-\label{app:deep-work}
+\subsection{Deep Work Rules}
 %......................................................................
 
 \begin{prompt}
@@ -506,12 +550,21 @@ Each guideline addresses an anti-pattern commonly exhibited by LLM-generated cod
 - Every meaningful change needs a concrete verification method (test, grep, CLI).
 \end{prompt}
 
-These rules address failures where the model interprets instructions loosely and makes changes that are directionally correct but concretely wrong.
+\noindent The deep work rules address a failure mode where the model interprets an instruction loosely and makes changes that are directionally correct but concretely wrong:
+
+\textbf{``For `align'/`match'/`make consistent': read the target state before editing.''}  When a user says ``make file~A consistent with file~B,'' the model often reads file~A, infers what file~B probably contains, and edits A based on that inference---without ever reading B.  This instruction mandates reading the target first, ensuring that the alignment is based on concrete facts rather than assumptions.
+
+\textbf{``Use concrete values, not indirections (read Y first, then write specific values into X).''}  A related failure mode occurs when the model's plan says ``update X to match Y'' but the model never resolves what Y actually is.  The instruction requires the model to first read~Y, extract the specific values, and then write those values into~X.  This eliminates a class of errors where the model's mental model of~Y differs from reality.
+
+\textbf{``List concrete planned changes before executing multi-part work.''}  When a task requires changes to multiple files, executing them one at a time without a plan leads to inconsistencies: the model may change a function signature in one file but forget to update a caller in another.  Listing all planned changes before executing any of them forces the model to consider the full scope of the change and identify dependencies.
+
+\textbf{``Every meaningful change needs a concrete verification method.''}  A change without a verification method is a change that cannot be confirmed to work.  This instruction requires the model to pair each change with a specific check---a test, a grep for the expected pattern, a CLI command that exercises the changed behavior---ensuring that the change can be validated programmatically rather than by visual inspection of a diff.
 
 %......................................................................
-\subsection{Planning for complex tasks}
-\label{app:planning}
+\subsection{Planning for Complex Tasks}
 %......................................................................
+
+The planning instructions use a complexity threshold---three or more files, cross-module changes, or architectural work---to decide when formal planning is required:
 
 \begin{prompt}
 ## Complex Task Planning
@@ -526,27 +579,49 @@ For 3+ files, cross-module, or architectural work:
 Skip for simple single-file tasks.
 \end{prompt}
 
-The complexity threshold---three or more files---avoids the overhead of planning trivial changes while ensuring comprehensive planning for tasks with cross-module dependencies.
+\noindent Each planning step targets a specific failure mode:
+
+\textbf{``List files to change and why.''}  This forces the model to enumerate the full blast radius of a change before touching any file.  Without this step, the model often discovers mid-task that additional files need changes, leading to incomplete or inconsistent modifications.
+
+\textbf{``State exact intended change per file.''} Listing files alone is insufficient; the model must also articulate \emph{what} will change in each file.  This converts a vague plan (``update the database module'') into a concrete specification (``add a \texttt{cache\_ttl} parameter to \texttt{DatabaseClient.\_\_init\_\_}, modify the query method to check the cache before hitting the database, add a cache invalidation method).
+
+\textbf{``Identify dependencies and execution order.''}  Some changes must precede others: a new utility function must be written before callers can import it, a migration must run before code that depends on the new schema.  Identifying these dependencies prevents the model from applying changes in an order that produces intermediate states where the code does not compile, or tests do not pass.
+
+\textbf{``State verification method per change.''}  The verification requirement from the Deep Work section is reinforced here at the planning stage, ensuring that verification is planned alongside the changes rather than treated as an afterthought.
+
+\noindent The escape clause---``Skip for simple single-file tasks''---avoids the overhead of planning trivial changes.  Requiring a formal plan for a one-line typo fix would waste tokens and slow down the agent without any compensating benefit.
 
 %......................................................................
-\subsection{Testing instructions}
-\label{app:testing}
+\subsection{Testing Instructions}
 %......................................................................
+
+The testing section is perhaps the most opinionated:
 
 \begin{prompt}
 ## Testing
 
 - Run lint/typecheckers; fix all errors. Achieve 100% branch coverage. Every error, including pre-existing ones, is yours---don't skip.
-- NO mocks, patches, fakes, or test doubles. Write integration/e2e tests. Each test is independent, verifying actual behavior.
+- NO mocks, patches, fakes, or test doubles. Write integration/e2e tests. Each test independent, verifying actual behavior.
 - **Only run impacted tests after modifications.**
 - To confirm races: add random sleep (<0.1s) before racing statements.
 \end{prompt}
 
-The most opinionated rule is the no-mocks requirement.  Mock tests verify that code calls certain methods in a certain order---they test the implementation, not the behavior.  A test suite built on mocks can pass with flying colors while the system is fundamentally broken.  Integration tests that exercise actual behavior provide genuine confidence that the system works.  The clause ``Every error, including pre-existing ones, is yours---don't skip'' makes the agent responsible for the entire codebase's health, not just the delta it introduced.
+\noindent Each testing instruction addresses a specific concern:
+
+\textbf{``Run lint/typecheckers; fix all errors.\ Achieve 100\% branch coverage.''}  Before committing any change, the agent must ensure it does not introduce lint violations or type errors.  This catches a broad class of issues---unused imports, type mismatches, style violations---that would otherwise accumulate across tasks.  Full branch coverage ensures that every conditional path in the code under test has been exercised.  LLMs tend to write happy-path tests that cover the main code path but ignore error handling, edge cases, and early-return branches.  The 100\% target forces the model to write tests for every branch, including error paths and boundary conditions.  Moreover, such tests help with regression---developers can confidently use AI coding agents without fear that changes will break existing program behavior.
+
+\textbf{``Every error, including pre-existing ones, is yours---don't skip.''}  Without this clause, the model frequently rationalizes pre-existing lint or type errors as ``not my problem'' and calls \texttt{finish} with a passing result despite a broken build.  The instruction makes the agent responsible for the entire codebase health, not just the delta it introduced.
+
+\textbf{``NO mocks, patches, fakes, or test doubles.\ Write integration/e2e tests.''}  This is the most opinionated rule.  Mock tests that verify code calls certain methods in a certain order test the implementation, not the behavior.  A test suite built on mocks can pass with flying colors while the system is fundamentally broken, because the mocks hide the real dependencies.  Integration tests that exercise actual behavior are more expensive to run but provide genuine confidence that the system works.  Moreover, writing integration tests forces the model to think more deeply, often enabling the agent to find deeper bugs in the code.  The distinction between unit and integration tests matters: a unit test in isolation may verify that a function produces the right output for a given input, but an integration or end-to-end test verifies that the function works correctly within the larger system---with real file I/O, real database connections, and real inter-module interactions.
+
+\textbf{``Each test independent, verifying actual behavior.''}  Test independence means that running tests in any order produces the same results.  Tests that depend on shared state or execution order are brittle and difficult to debug when they fail.  ``Verifying actual behavior'' reiterates that tests should assert on observable outcomes (return values, side effects, system state) rather than implementation details.
+
+\textbf{``Only run impacted tests after modifications.''}  Running the full test suite after every small change is wasteful when only a few modules are affected.  For a large project, a full test run may take minutes, and doing it after every edit adds up to significant wasted time and compute.  This instruction directs the model to identify which tests are affected by its changes and run only those, improving iteration speed.
+
+\textbf{``To confirm races: add random sleep (<0.1s) before racing statements.''}  Race conditions are notoriously difficult to reproduce because they depend on precise timing.  By inserting small sleep delays at strategic points, the model can widen the race window and make the bug manifest deterministically during testing.  The 0.1-second upper bound keeps the test fast while still being sufficient to expose most races.
 
 %......................................................................
-\subsection{Self-improvement loop}
-\label{app:self-improvement}
+\subsection{Self-Improvement Loop}
 %......................................................................
 
 The agent maintains a preferences file that captures user invariants discovered during task execution:
@@ -557,12 +632,21 @@ The agent maintains a preferences file that captures user invariants discovered 
 Read PWD/USER_PREFS.md at task start. Update with user preferences/invariants (no code snippets/symbols; skip one-off tasks). Remove conflicting old entries carefully and thoroughly.
 \end{prompt}
 
-This mechanism allows the agent to accumulate project knowledge over time without requiring the user to repeat themselves.  The conflict-resolution clause mandates that the agent actively resolve contradictions when updating the file.  The prohibition on code snippets and symbols keeps the file compact and robust against code changes; the one-off task exclusion prevents preference drift due to idiosyncratic details.
+\noindent Each clause in this compact instruction serves the goal of cross-session learning:
+
+\textbf{``Read PWD/USER\_PREFS.md at task start.''}  The preferences file contains invariants learned from previous tasks---coding conventions, project-specific rules, architectural decisions.  Reading it at the start of each task ensures that the agent's behavior is consistent across sessions, even though each session starts with a fresh context window.
+
+\textbf{``Update with user preferences/invariants.''}  After completing a task, the agent may have learned new information about the user's preferences: a preferred naming convention, a disliked pattern, a project-specific invariant.  Writing these to the preferences file makes them available to future sessions.  This mechanism allows the agent to accumulate project knowledge over time without requiring the user to repeat themselves.
+
+\textbf{``No code snippets/symbols; skip one-off tasks.''}  Code snippets in the preferences file are fragile: they become stale as the codebase evolves, and they consume tokens that would be better spent on natural-language descriptions of invariants.  The companion rule about one-off tasks prevents preference drift in the opposite direction: without it, the agent would record an entry every time it completed any task, gradually polluting the file with idiosyncratic details (a particular file path, a single throwaway experiment) that have no bearing on future work.  Together, the two clauses keep the file compact, robust to code changes, and focused on durable invariants.
+
+\textbf{``Remove conflicting old entries carefully and thoroughly.''}  Over time, preferences may become contradictory---for example, an early preference might say ``use camelCase for test methods'' while a later correction says ``use snake\_case.'' Without explicit conflict resolution, the file would accumulate contradictions, confusing the agent.  This instruction mandates that the agent actively resolve conflicts when updating the file to maintain internal consistency.  \emph{Note that we do not keep learnings in a database or in various folders because it makes the information stale when lots of code changes are happening.  It is impossible for an agent to eliminate stale information across databases and multiple folders.}
 
 %......................................................................
-\subsection{Pre-finish verification}
-\label{app:prefinish}
+\subsection{Pre-Finish Verification}
 %......................................................................
+
+Before declaring a task complete, the agent must pass a structured verification checklist:
 
 \begin{prompt}
 ## Pre-Finish Verification
@@ -573,15 +657,49 @@ Before finish(success=True):
 1. Run required checks (lint, typecheck, tests); fix failures.
 1. Check each user requirement against delivery.
 1. If any check fails, keep working.
-1. After 3 failed retries of the same fix, rethink from scratch.
+1. After 3 failed retries of same fix, rethink from scratch.
 \end{prompt}
 
-The three-retry threshold forces the model to break out of repetitive loops by abandoning the current approach and reconsidering the problem from first principles.
+\noindent Each step in this checklist addresses a specific way agents declare premature success:
+
+\textbf{``Re-read and verify every modified file.''}  This is the analog of a code review performed by the agent on its own work.  The model may have introduced a typo, forgotten to close a bracket, or made an edit that looked correct in the diff but was wrong in the full-file context.  Re-reading the file after all edits are complete catches these errors.
+
+\textbf{``Run required checks (lint, typecheck, tests); fix failures.''}  This converts the subjective assessment ``I think my changes are correct'' into an objective, automated verification.  If the lint, typecheck, or test suite fails, the agent must fix the failure before declaring success.
+
+\textbf{``Check each user requirement against delivery.''}  The model may have completed a task that it \emph{thinks} satisfies the user's request, but actually misses a requirement.  This instruction forces a systematic comparison between the original task description and the delivered result, catching gaps and misinterpretations.
+
+\textbf{``If any check fails, keep working.''}  Without this instruction, the model may call \texttt{finish(success=True)} even when it knows a check has failed, rationalizing that the failure is ``minor'' or ``unrelated.''  The instruction makes the rule absolute: no finishing until all checks pass.
+
+\textbf{``After 3 failed retries of same fix, rethink from scratch.''}  LLMs can enter repetitive loops where they apply the same incorrect fix repeatedly, each time hoping for a different result.  The three-retry threshold forces the model to break out of such loops by abandoning the current approach and reconsidering the problem from first principles.  This is analogous to the debugging heuristic ``if you've been staring at the same code for twenty minutes, you're looking in the wrong place.''
 
 %......................................................................
-\subsection{File browsing protocol}
-\label{app:file-browsing}
+\subsection{Web Research Protocol}
 %......................................................................
+
+When the agent needs external knowledge, the prompt prescribes a structured research workflow rather than allowing ad-hoc browsing:
+
+\begin{prompt}
+## Web Research (MANDATORY)
+
+- **Visit >=30 websites every search. Hard requirement---don't stop before 30 or rationalize fewer.**
+- Procedure:
+  1. Create PWD/tmp/information-{unique_id}.md: `# Web Research --- Websites visited: 0/30`
+  1. Per site, append: `## [N/30] URL` + extracted info. Update header counter each visit.
+  1. **Don't proceed until counter >=30.**
+  1. If results dry up, try different queries, synonyms, official docs, GitHub repos/issues, Stack Overflow, blogs, Reddit, papers, API refs.
+  1. After 30, review and think deeply.
+- Ask user for login help when needed.
+\end{prompt}
+
+\noindent The rationale is a two-phase separation between \emph{collection} and \emph{synthesis}.  LLMs tend to anchor on the first few results they encounter, which biases their solutions toward a narrow slice of the design space.  By forcing the agent to accumulate a broad set of information into a file \emph{before} reasoning about it, the protocol counteracts anchoring bias and encourages the model to consider diverse approaches.  The ``visit $\geq$30 websites'' threshold is deliberately aggressive: it ensures the agent does not shortcut the research phase after two or three hits, and the resulting information file serves as an auditable artifact of what the agent considered.  The structured procedure with a counter header (\texttt{\# Web Research --- Websites visited: 0/30}) and per-site entries (\texttt{\#\# [N/30] URL}) addresses an empirically observed failure mode in which the model claims to have ``visited many sites'' after only a handful of fetches; a concrete counter forces the model to verify the actual number visited before declaring the collection phase complete.  The instruction to try ``different queries, synonyms, official docs'' when results dry up prevents the agent from giving up prematurely on a narrow set of search terms.
+
+The login instruction addresses a practical obstacle in web research: many websites require authentication before revealing their content.  Rather than silently skipping gated pages or hallucinating their contents, we instruct the agent to ask the user for help with login.
+
+%......................................................................
+\subsection{File Browsing Protocol}
+%......................................................................
+
+When a task requires understanding multiple source files before making changes, the prompt prescribes the same two-phase collect-then-synthesize discipline used for web research, but applied to the local file system:
 
 \begin{prompt}
 ## File Browsing
@@ -589,7 +707,46 @@ The three-retry threshold forces the model to break out of repetitive loops by a
 Collect info and code snippets in PWD/tmp/file-information-{unique_id}.md without overthinking, then review and think deeply.
 \end{prompt}
 
-This instruction applies the same two-phase collect-then-synthesize discipline used for web research (Section~\ref{sec:web-research}) to the local file system.  By writing a structured summary of each file's relevant information to a temporary markdown file, the agent externalizes its understanding as a compact artifact, typically much smaller than the raw source files, freeing up context window capacity for subsequent reasoning and editing.
+\noindent This instruction addresses a failure mode distinct from the web research case.  When an agent must read many project files to understand a codebase before making changes, it tends to read a file, form a hypothesis, and immediately begin editing---anchoring on the first few files it encounters and missing relevant context in files it never opens.  Worse, each file read consumes context window tokens; by the time the agent has read enough files to understand the full picture, it may have already spent most of its context window on the raw file contents, leaving little room for reasoning and code generation.
+
+The file browsing protocol counteracts both problems.  By writing a structured summary of each file's relevant information into a temporary markdown file, the agent externalizes its understanding into a compact artifact that persists across context boundaries.  The instruction to collect ``without overthinking'' is deliberate: during the collection phase, the agent should extract and record facts (function signatures, class hierarchies, call sites, invariants) rather than analyze or plan.  Analysis happens in the second phase, when the agent reads its own summary file and reasons about the collected information as a whole.
+
+This two-phase separation provides three benefits.  First, it prevents premature commitment: the agent cannot start editing until it has surveyed the relevant files, reducing the risk of changes that are locally correct but globally inconsistent.  Second, the summary file is typically much smaller than the raw source files, freeing up context window capacity for subsequent reasoning and editing phases.  Third, the summary file serves as an auditable artifact---the developer can inspect it to verify that the agent considered the right files and extracted the right information before making changes.
+
+%......................................................................
+\subsection{Desktop Application Control}
+%......................................................................
+
+The agent can interact with graphical desktop applications using screenshots, keyboard, and mouse:
+
+\begin{prompt}
+## Desktop Apps
+
+Use screenshots, keyboard, and mouse. Don't launch VS Code or its extensions.
+\end{prompt}
+
+\noindent This instruction enables the agent to operate GUI applications (Preview, browsers, graphical diff tools) when command-line alternatives are insufficient.  The explicit prohibition on launching VS~Code prevents a recursive loop: since the agent runs \emph{inside} a VS~Code extension, launching another VS~Code instance or modifying extension state from within the agent could corrupt the host session or create deadlocks.  Note that modern LLMs support desktop control abilities, and we are merely exploiting them.
+
+%......................................................................
+\subsection{Sorcar-Specific Overrides}
+%......................................................................
+
+A final section provides project-specific instructions that are injected when the agent operates on its own codebase:
+
+\begin{prompt}
+## Sorcar-specific
+
+- Lint/typecheck/format: `uv run check --full`. Test: `uv run pytest -v` (timeout 900s).
+- **Do NOT install the KISS Sorcar extension from inside Sorcar.**
+- To open/edit system prompt: ~/.vscode/extensions/ksenxx.kiss-sorcar-2026.5.8/kiss_project/src/kiss/SYSTEM.md
+- KISS Sorcar info: https://github.com/ksenxx/kiss_ai/blob/main/papers/kisssorcar/kiss_sorcar.tex
+- Third-party agents: kiss/agents/third_party_agents
+- Official Claude SKILLS: kiss/agents/claude_skills
+- Authenticate unauthenticated third-party agents; ask user only when a page needs auth.
+- Read PWD/SORCAR.md as overriding instructions.
+\end{prompt}
+
+These overrides serve seven purposes.  First, they specify the exact toolchain commands for the KISS project itself (\texttt{uv run check -{}-full}, \texttt{uv run pytest}), eliminating guesswork about which linter, formatter, or test runner to use.  Second, they prevent dangerous self-modification: just as a surgeon should not operate on themselves, the agent must not install or reinstall the VS~Code extension it is running inside, since doing so would terminate its own process.  Third, they provide navigation instructions for the agent's own source: when the user asks to edit the system prompt, the agent knows the exact file path within the installed VS~Code extension directory, avoiding guesswork about where the file lives.  Moreover, it does not create unnecessary UI components in KISS Sorcar just to edit the system prompt.  Fourth, the agent is given a URL to its own paper's source as a source of self-knowledge: when a user asks the agent about its own capabilities, design, or identity, it can retrieve and read the paper rather than hallucinating an answer.  This creates a self-referential loop in which the documentation describing the agent is also consumed by the agent.  Fifth, the instructions expose a third-party agent integration layer: the agent is told where third-party agents live (\texttt{kiss/agents/third\_party\_agents}).  When a third-party agent requires authentication, the agent handles it autonomously and only prompts the user when a page genuinely requires user credentials---reducing unnecessary interruptions while maintaining security.  Sixth, official Claude SKILLS~\citep{claudecode2025} are bundled in \texttt{kiss/agents/claude\_skills}, giving the agent access to Anthropic's curated skill library for common software engineering patterns; by indicating where these skills reside, the agent can reference and apply them when relevant tasks arise.  Seventh, the \texttt{SORCAR.md} override mechanism allows per-repository instructions to further customize the agent's behavior, forming a hierarchy: general system prompt $\rightarrow$ Sorcar-specific instructions $\rightarrow$ repository-specific \texttt{SORCAR.md}.  This approach also enables us to not hardcode \texttt{SORCAR.md} in the KISS Sorcar code, removing one more dependency.  In the \texttt{SORCAR.md}, one can include more markdown files for further instructions.
 
 %......................................................................
 \section{Painless software engineering (continued)}
