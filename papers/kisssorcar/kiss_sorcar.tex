@@ -407,25 +407,50 @@ Each tool rule addresses a specific failure mode:
 \subsection{Pre-flight Checks}
 %......................................................................
 
-Before modifying any file, we instruct the agent to read it first.  
+We begin every task with mandatory reads, then enforce a read-before-modify discipline:
 
 \begin{prompt}
+## Mandatory First Actions -- CRITICAL
+
+Your VERY FIRST tool call in every task MUST be
+Read("PWD/USER_PREFS.md").
+Your SECOND tool call MUST be Read("PWD/SORCAR.md").
+
+These two reads MUST happen before ANY other tool
+call -- no Bash, no Write, no screenshot, nothing.
+
+Prohibited shortcuts: Do NOT use Bash("cat
+USER_PREFS.md ...") or Bash("head ...") or any
+Bash command to read these files. You MUST use the
+Read() tool.
+
+Do NOT combine these reads with other work. Two
+separate Read() calls, in order: USER_PREFS.md
+first, then SORCAR.md.
+
 ## Pre-flight Checks
 
-Read every file before modifying it. Read relevant
-source files when the task depends on existing
-architecture. If referenced files, commands, or config
-don't exist, stop and ask the user rather than guessing.
+Read before modify rule: You MUST call Read(file_path)
+on every file BEFORE calling Edit(file_path) on it.
+Never Edit a file you have not Read in the current
+session. This is non-negotiable. Do NOT use
+Bash("cat ...") as a substitute -- use the Read() tool.
+
+Read relevant source files when the task depends on
+existing architecture. If referenced files, commands, or
+config don't exist, stop and ask the user rather than
+guessing.
 
 When fixing bugs, issues, or race conditions: write an
 integration test that reproduces the problem first, then
 fix the code, then verify the test passes.
 \end{prompt}
 
-\noindent Each pre-flight check targets a specific category of avoidable
-error:
+\noindent The ``Mandatory First Actions'' section ensures that cross-session preferences and project-specific overrides are loaded before any work begins.  This section has undergone two rounds of empirical refinement.  In the initial version (which merely listed the reads in a ``Self-Improvement Loop'' section), the agent read \texttt{USER\_PREFS.md} as its first tool call only 33\% of the time and read \texttt{SORCAR.md} only 46\% of the time.  After promoting these reads to a dedicated section with imperative language, compliance improved in integration tests but regressed in production: analysis of 91~real tasks showed that 90\% still violated the \texttt{USER\_PREFS.md}-first rule and 92\% never read \texttt{SORCAR.md}.  Two evasion patterns emerged: (1)~the agent used \texttt{Bash("cat USER\_PREFS.md")} instead of the \texttt{Read()} tool (11~tasks), and (2)~the agent combined the file read with other commands in a single \texttt{Bash} call (5~tasks).  The current version addresses these evasions with explicit prohibitions (``Do NOT use Bash to cat/head these files'') and ordinal position mandates (``Your VERY FIRST tool call'', ``Your SECOND tool call'').  After these changes, compliance reached 100\% in integration tests.
 
-\textbf{``Read every file before modifying it.''}  The most common source of agent-introduced bugs is modifying a file based on an incorrect assumption about its current contents.  The model may ``remember'' an older version of the file from its training data, or it may extrapolate from a partial reading.  By requiring a fresh read immediately before any edit, the instruction ensures that the model operates on the file's current state rather than a stale mental model.  The companion clause ``Read relevant sources if the task depends on existing architecture'' extends this rule from individual files to architectural context.  A task like ``add a caching layer to the database module'' requires understanding not just the file to be modified, but also how callers interact with it, what interfaces it provides, and what invariants it assumes.  The instruction prevents the model from jumping straight to code generation without understanding the broader context.
+Each pre-flight check targets a specific category of avoidable error:
+
+\textbf{``Read before modify rule.''}  The most common source of agent-introduced bugs is modifying a file based on an incorrect assumption about its current contents.  The model may ``remember'' an older version of the file from its training data, or it may extrapolate from a partial reading.  By requiring a fresh read immediately before any edit, the instruction ensures that the model operates on the file's current state rather than a stale mental model.  The companion clause ``Read relevant sources if the task depends on existing architecture'' extends this rule from individual files to architectural context.  A task like ``add a caching layer to the database module'' requires understanding not just the file to be modified, but also how callers interact with it, what interfaces it provides, and what invariants it assumes.  The instruction prevents the model from jumping straight to code generation without understanding the broader context.
 
 \textbf{``If referenced files, commands, or config don't exist, stop and ask the user rather than guessing.''}  LLMs have a strong tendency to confabulate: when asked to modify a file that does not exist, the model will often proceed as if it does, producing edits against phantom content.  This instruction converts a silent failure (incorrect edits applied to a nonexistent file, which silently creates it) into an explicit clarification request.
 
@@ -582,16 +607,16 @@ The agent maintains a preferences file that captures user invariants discovered 
 \begin{prompt}
 ## Self-Improvement Loop
 
-Read PWD/USER_PREFS.md at the start of every task.
-Update it with newly discovered user preferences and
-project invariants (no code snippets or symbol names;
-skip one-off task details). When adding new entries,
-remove any conflicting older entries.
+Update PWD/USER_PREFS.md with newly discovered user
+preferences and project invariants (no code snippets
+or symbol names; skip one-off task details). When
+adding new entries, remove any conflicting older
+entries.
 \end{prompt}
 
 \noindent Each clause in this compact instruction serves the goal of cross-session learning:
 
-\textbf{``Read PWD/USER\_PREFS.md at task start.''}  The preferences file contains invariants learned from previous tasks---coding conventions, project-specific rules, architectural decisions.  Reading it at the start of each task ensures that the agent's behavior is consistent across sessions, even though each session starts with a fresh context window.
+\textbf{Reading USER\_PREFS.md at task start.}  The preferences file contains invariants learned from previous tasks---coding conventions, project-specific rules, architectural decisions.  The ``Mandatory First Actions'' section now enforces this read as the very first tool call, ensuring that the agent's behavior is consistent across sessions, even though each session starts with a fresh context window.
 
 \textbf{``Update with user preferences/invariants.''}  After completing a task, the agent may have learned new information about the user's preferences: a preferred naming convention, a disliked pattern, a project-specific invariant.  Writing these to the preferences file makes them available to future sessions.  This mechanism allows the agent to accumulate project knowledge over time without requiring the user to repeat themselves.
 
@@ -606,13 +631,16 @@ remove any conflicting older entries.
 Before declaring a task complete, the agent must pass a structured verification checklist:
 
 \begin{prompt}
-## Pre-Finish Verification
+## Pre-Finish Verification -- CRITICAL
 
 Before calling finish(success=True):
 
 1. Re-read and verify every modified file.
-2. Run required checks (lint, typecheck, tests); fix
-   any failures.
+2. If you created or modified ANY .py, .ts, .js, .css,
+   .tsx, or .jsx file in this session: you MUST run
+   uv run check --full and fix all errors. This is not
+   optional. Do NOT call finish without running this
+   command first.
 3. Check each user requirement against what was
    delivered.
 4. If any check fails, keep working.
@@ -624,7 +652,7 @@ Before calling finish(success=True):
 
 \textbf{``Re-read and verify every modified file.''}  This is the analog of a code review performed by the agent on its own work.  The model may have introduced a typo, forgotten to close a bracket, or made an edit that looked correct in the diff but was wrong in the full-file context.  Re-reading the file after all edits are complete catches these errors.
 
-\textbf{``Run required checks (lint, typecheck, tests); fix failures.''}  This converts the subjective assessment ``I think my changes are correct'' into an objective, automated verification.  If the lint, typecheck, or test suite fails, the agent must fix the failure before declaring success.
+\textbf{``If you created or modified ANY code file: you MUST run uv run check.''}  The original instruction (``Run required checks; fix failures'') was too vague: analysis of 91~real tasks showed that 70\% of code-modification tasks (7/10) skipped lint/typecheck entirely.  The revised version enumerates the exact file extensions that trigger the obligation and names the exact command to run, converting a soft guideline into an unambiguous, verifiable mandate.
 
 \textbf{``Check each user requirement against delivery.''}  The model may have completed a task that it \emph{thinks} satisfies the user's request, but actually misses a requirement.  This instruction forces a systematic comparison between the original task description and the delivered result, catching gaps and misinterpretations.
 
@@ -648,11 +676,18 @@ information:
 - Visit at least 30 distinct websites per research
   session. Do not stop early or rationalize visiting
   fewer.
+- You MUST use go_to_url() to visit each site. Do NOT
+  use Bash("curl ...") or Bash("wget ...") as a
+  substitute for visiting websites. Using curl/wget to
+  fetch pages does not count toward the 30-site
+  requirement.
 - Procedure:
   1. Create PWD/tmp/information-{unique_id}.md with
      header: # Web Research -- Websites visited: 0/30
-  2. Per site visited, append: ## [N/30] URL + extracted
-     information. Update the header counter.
+  2. Per site visited: (a) use go_to_url() to visit the
+     site, (b) extract information, (c) use Edit() to
+     append ## [N/30] URL + extracted information to the
+     file, (d) use Edit() to update the header counter.
   3. Do not proceed to synthesis until the counter
      reaches 30.
   4. If results dry up, try different queries, synonyms,
@@ -670,6 +705,8 @@ sufficient context, proceed directly.
 \end{prompt}
 
 \noindent The rationale is a two-phase separation between \emph{collection} and \emph{synthesis}.  LLMs tend to anchor on the first few results they encounter, which biases their solutions toward a narrow slice of the design space.  By forcing the agent to accumulate a broad set of information into a file \emph{before} reasoning about it, the protocol counteracts anchoring bias and encourages the model to consider diverse approaches.  The ``visit $\geq$30 websites'' threshold is deliberately aggressive: it ensures the agent does not shortcut the research phase after two or three hits, and the resulting information file serves as an auditable artifact of what the agent considered.  The structured procedure with a counter header (\texttt{\# Web Research --- Websites visited: 0/30}) and per-site entries (\texttt{\#\# [N/30] URL}) addresses an empirically observed failure mode in which the model claims to have ``visited many sites'' after only a handful of fetches; a concrete counter forces the model to verify the actual number visited before declaring the collection phase complete.  The instruction to try ``different queries, synonyms, official docs'' when results dry up prevents the agent from giving up prematurely on a narrow set of search terms.
+
+An additional evasion pattern observed in production was the agent using \texttt{Bash("curl ...")} to fetch web pages instead of \texttt{go\_to\_url()}, thereby bypassing the browser-based visit counter while still gathering information.  Analysis of 91~real tasks found 4~research tasks that visited fewer than 30~sites (ranging from 1--5~URLs), with one task (1179) using \texttt{curl} to fetch content from 15+~sites without triggering \texttt{go\_to\_url}.  The explicit prohibition of \texttt{curl}/\texttt{wget} for research closes this loophole.
 
 The login instruction addresses a practical obstacle in web research: many websites require authentication before revealing their content.  Rather than silently skipping gated pages or hallucinating their contents, we instruct the agent to ask the user for help with login.
 
